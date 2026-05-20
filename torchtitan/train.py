@@ -395,6 +395,8 @@ class Trainer(torch.distributed.checkpoint.stateful.Stateful):
         # apply context parallelism if cp is enabled
         # ensure CP handles the separate freqs_cis buffer for each pp stage
         inputs = input_dict["input"]
+        print('inputs.shape:', inputs.shape)
+        print('labels.shape:', labels.shape)
         optional_context_parallel_ctx = (
             dist_utils.create_context_parallel_ctx(
                 cp_mesh=parallel_dims.world_mesh["cp"],

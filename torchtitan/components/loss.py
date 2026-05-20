@@ -8,6 +8,8 @@ import functools
 from typing import Callable, TypeAlias
 
 import torch
+from torch import nn
+from torch.nn import functional as F
 
 from torchtitan.config import JobConfig
 from torchtitan.tools.logging import logger
@@ -41,3 +43,65 @@ def rescale_accumulated_loss(unwrapped_loss_fn, accumulation_steps):
         return loss / accumulation_steps
 
     return accumulated_loss_fn
+
+
+
+def dpo_loss(
+    policy_chosen_logps: torch.Tensor,
+    policy_rejected_logps: torch.Tensor,
+    policy_chosen_logits: torch.Tensor,
+    policy_rejected_logits: torch.Tensor,
+    reference_chosen_logps: torch.Tensor,
+    reference_rejected_logps: torch.Tensor,
+    reference_chosen_logits: torch.Tensor,
+    reference_rejected_logits: torch.Tensor,
+    beta: float = 0.1,
+    label_smoothing: float = 0.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Compute the DPO loss for a batch of policy and reference model log probabilities.
+
+    Args:
+        policy_inputs (ChosenRejectedOutputs): Policy log-probs and logits required for the calculation.
+        reference_inputs (ChosenRejectedOutputs): Reference log-probs and logits required for the calculation.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor]: A tuple of three tensors:
+            - losses: The DPO loss for each example in the batch.
+            - chosen_rewards: Rewards for the chosen responses.
+            - rejected_rewards: Rewards for the rejected responses.
+
+    """
+    pi_logratios = policy_chosen_logps - policy_rejected_logps
+    ref_logratios = reference_chosen_logps - reference_rejected_logps
+
+    logits = pi_logratios - ref_logratios
+
+    # The beta is a temperature parameter for the DPO loss, typically something in the range of 0.1 to 0.5.
+    # We ignore the reference model as beta -> 0. The label_smoothing parameter encodes our uncertainty about the labels and
+    # calculates a conservative DPO loss.
+    losses = (
+        -F.logsigmoid(beta * logits) * (1 - label_smoothing)
+        - F.logsigmoid(-beta * logits) * label_smoothing
+    )
+
+    chosen_rewards = (
+        beta
+        * (policy_chosen_logps - reference_chosen_logps).detach()
+    )
+    rejected_rewards = (
+        beta
+        * (policy_rejected_logps - reference_rejected_logps).detach()
+    )
+
+    return losses, chosen_rewards, rejected_rewards
+
+
+def build_dpo_loss(job_config: JobConfig):
+    loss_fn = dpo_loss
+    if job_config.training.compile:
+        logger.info("Compiling the loss function with torch.compile")
+        loss_fn = torch.compile(loss_fn)
+    return loss_fn
+
+

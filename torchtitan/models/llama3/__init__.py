@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from torchtitan.components.loss import build_cross_entropy_loss
+from torchtitan.components.loss import build_cross_entropy_loss, build_dpo_loss
 from torchtitan.components.lr_scheduler import build_lr_schedulers
 from torchtitan.components.optimizer import build_optimizers
 from torchtitan.components.tokenizer import build_hf_tokenizer
@@ -49,6 +49,15 @@ llama3_configs = {
         multiple_of=1024,
         rope_theta=500000,
     ),
+    "27B": TransformerModelArgs(
+        dim=5376,
+        n_layers=62,
+        n_heads=32,
+        n_kv_heads=16,
+        ffn_dim_multiplier=1.3,
+        multiple_of=2048,
+        rope_theta=500000,
+    ),
     "70B": TransformerModelArgs(
         dim=8192,
         n_layers=80,
@@ -81,7 +90,8 @@ register_train_spec(
         build_lr_schedulers_fn=build_lr_schedulers,
         build_dataloader_fn=build_hf_dataloader,
         build_tokenizer_fn=build_hf_tokenizer,
-        build_loss_fn=build_cross_entropy_loss,
+        # build_loss_fn=build_cross_entropy_loss,
+        build_loss_fn=build_dpo_loss,
         build_validator_fn=build_validator,
         state_dict_adapter=Llama3StateDictAdapter,
     )
